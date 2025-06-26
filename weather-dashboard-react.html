@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>React Weather App</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const { useState } = React;
+
+      function WeatherApp() {
+        const [forecast, setForecast] = useState([]);
+        const [formData, setFormData] = useState({
+          city: "",
+          unit: "metric",
+        });
+
+        const [formErrors, setFormErrors] = useState({});
+        const [weather, setWeather] = useState(null);
+        const [loading, setLoading] = useState(false);
+        const [error, setError] = useState(null);
+        const [hasSearched, setHasSearched] = useState(false);
+
+        const apiKey = "105d28d14cf20bc8d47e9cead3a38ad5";
+
+        function handleChange(e) {
+          const { name, value } = e.target;
+          setFormData((prev) => ({
+            ...prev,
+            [name]: value,
+          }));
+
+          validateField(name, value);
+        }
+
+        function validateField(name, value) {
+          setFormErrors((prev) => {
+            const updated = { ...prev };
+            if (name === "city") {
+              if (value.trim().length < 2) {
+                updated.city = "City must be at least 2 characters.";
+              } else {
+                delete updated.city;
+              }
+            }
+            return updated;
+          });
+        }
+
+        function isFormValid() {
+          return (
+            formData.city.trim().length >= 2 &&
+            Object.keys(formErrors).length === 0
+          );
+        }
+
+        function handleGeolocation() {
+          if(!navigator.geolocation) {
+            setError("Geolocation is not supported by your browser.");
+            return;
+          }
+
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              const {latitude, longitude} = position.coords;
+              fetchWeatherByCoords(latitude, longitude);
+            },
+            (err) => {
+              setError("Unable to retrieve your location.");
+            }
+          );
+        }
+
+        async function fetchWeather() {
+          const city = formData.city.trim();
+          if (!city) return;
+
+          setHasSearched(true);
+          setLoading(true);
+          setError(null);
+
+          const url = `https://api.openweathermap.org/data/2.5/weather?q=${city}&units=${formData.unit}&appid=${apiKey}`;
+
+          try {
+            const res = await fetch(url);
+            if (!res.ok) {
+              throw new Error("City not found");
+            }
+            const data = await res.json();
+
+            setWeather({
+              name: data.name,
+              temp: data.main.temp,
+              description: data.weather[0].description,
+              icon: data.weather[0].icon,
+              main: data.weather[0].main,
+              dt: data.dt,
+              timezone: data.timezone
+            });
+
+            await fetchForecast(city);
+          } catch (err) {
+            setError(err.message);
+            setWeather(null);
+            setForecast([]);
+          } finally {
+            setLoading(false);
+          }
+        }
+
+        async function fetchForecast(cityName) {
+          const url = `https://api.openweathermap.org/data/2.5/forecast?q=${cityName}&units=${formData.unit}&appid=${apiKey}`;
+
+          try {
+            const res = await fetch(url);
+            if (!res.ok) {
+              throw new Error("Failed to get forecast");
+            }
+            const data = await res.json();
+            const dailyData = data.list.filter(reading => reading.dt_txt.includes("12:00:00"));
+
+            setForecast(dailyData);
+          } catch (err) {
+            console.error("Forecast fetch failed:", err);
+            setForecast([]);
+          }
+        }
+
+        async function fetchWeatherByCoords(lat, lon) {
+          setHasSearched(true);
+          setLoading(true);
+          setError(null);
+
+          const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=${formData.unit}&appid=${apiKey}`;
+
+          try {
+            const res = await fetch(url);
+            if (!res.ok) {
+              throw new Error("Unable to get weather for your location");
+            }
+            const data = await res.json();
+
+            setWeather({
+              name: data.name,
+              temp: data.main.temp,
+              description: data.weather[0].description,
+              icon: data.weather[0].icon,
+              main: data.weather[0].main,
+              dt: data.dt,
+              timezone: data.timezone
+            });
+          } catch (err) {
+            setError(err.message);
+            setWeather(null);
+          } finally {
+            setLoading(false);
+          }
+        }
+
+        function getLocalTime(dt, timezone) {
+          const localTimestamp = (dt + timezone) * 1000;
+          return new Date(localTimestamp);
+        }
+
+        function formatUTCOffset(offsetSeconds) {
+          const hoursOffset = offsetSeconds / 3600;
+          return `UTC${hoursOffset >= 0 ? '+' : ''}${hoursOffset}`;
+        }
+
+        function getDayNightEmoji(hour) {
+          if (hour >= 6 && hour < 18) {
+            return "🌞";
+          } else {
+            return "🌙";
+          }
+        }
+
+        function getWeatherEmoji(main) {
+          switch (main) {
+            case "Clear":
+              return "☀️";
+            case "Clouds":
+              return "☁️";
+            case "Rain":
+              return "🌧️";
+            case "Thunderstorm":
+              return "⛈️";
+            case "Snow":
+              return "❄️";
+            case "Drizzle":
+              return "🌦️";
+            case "Mist":
+            case "Fog":
+            case "Haze":
+              return "🌫️";
+            default:
+              return "🌤️";
+          }
+        }
+
+        return (
+          <div>
+            <h1>🌦️ Weather App</h1>
+
+            <input
+              type="text"
+              name="city"
+              placeholder="Enter city"
+              value={formData.city}
+              onChange={handleChange}
+              disabled={loading}
+            />
+            {formErrors.city && (
+              <p style={{ color: "red" }}>{formErrors.city}</p>
+            )}
+
+            <select
+              name="unit"
+              value={formData.unit}
+              onChange={handleChange}
+              disabled={loading}
+            >
+              <option value="metric">Celsius (°C)</option>
+              <option value="imperial">Fahrenheit (°F)</option>
+            </select>
+
+            <button onClick={fetchWeather} disabled={!isFormValid() || loading}>
+              {loading ? "Loading..." : "Get Weather"}
+            </button>
+
+            <button onClick={handleGeolocation} disabled={loading}>
+              Use My Location
+            </button>
+
+            {!hasSearched && !loading && !weather && !error && (
+              <p style={{ marginTop: "1em", color: "#555" }}>
+                Enter a city name to get the weather forecast.
+              </p>
+            )}
+
+            {loading && <p>Loading...</p>}
+            {error && <p style={{ color: "red" }}>{error}</p>}
+
+            {weather && (
+              <div style={{ marginTop: "1em" }}>
+                <h2>{weather.name}</h2>
+
+                <img
+                  src={`https://openweathermap.org/img/wn/${weather.icon}@2x.png`}
+                  alt={weather.description}
+                  style={{ marginBottom: "1rem" }}
+                />
+
+                <p>
+                  🌡️ Temp: {weather.temp}°
+                  {formData.unit === "metric" ? "C" : "F"}
+                </p>
+                <p>{getWeatherEmoji(weather.main)} {weather.description}</p>
+
+                <p>
+                {(() => {
+                  const localDate = getLocalTime(weather.dt, weather.timezone);
+                  const hours = localDate.getHours();
+                  return `${getDayNightEmoji(hours)} Local Time: ${localDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (${formatUTCOffset(weather.timezone)})`;
+                })()}
+              </p>
+              </div>
+            )}
+
+            {forecast.length > 0 && (
+              <div style={{ marginTop: "2rem" }}>
+                <h3>5-Day Forecast</h3>
+                <div className="forecast-container">
+                  {forecast.map((day) => {
+                    const date = new Date(day.dt * 1000);
+                    return (
+                      <div className="forecast-card" key={day.dt}>
+                        <p>{date.toLocaleDateString(undefined, { weekday: "short" })}</p>
+                        <img
+                          src={`https://openweathermap.org/img/wn/${day.weather[0].icon}@2x.png`}
+                          alt={day.weather[0].description}
+                          style={{ marginBottom: "0.5rem" }}
+                        />
+                        <p>{Math.round(day.main.temp)}°{formData.unit === "metric" ? "C" : "F"}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      }
+      
+      const root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(<WeatherApp />);
+    </script>
+  </body>
+</html>
